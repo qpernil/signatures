@@ -14,6 +14,19 @@ Pure Rust implementation of the Module-Lattice-Based Digital Signature Standard
 
 ML-DSA was formerly known as [CRYSTALS-Dilithium].
 
+## Memory usage
+
+With the `alloc` feature, expanded matrices use private storage backed by one
+`MaybeBox` allocation per row. Sampling and cloning do not assemble a complete
+inline matrix before heap offload. Without `alloc`, the rows remain inline.
+The public `module-lattice` types and their constructors are unchanged.
+
+Individual vectors and other intermediate values still use stack space. The
+stack regression covers key construction, cloning, verification-key decoding,
+signing, and verification for all three parameter sets on 512 KiB worker stacks,
+including builds with optimization disabled. This is a tested configuration,
+not a portable maximum stack requirement.
+
 ## ⚠️ Security Warning
 
 The implementation contained in this crate has never been independently audited!
