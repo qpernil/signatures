@@ -462,6 +462,38 @@ impl<P: MlDsaParams> ExpandedSigningKey<P> {
         kp.verifying_key()
     }
 
+    /// Decode an expanded FIPS 204 key after validating its secret coefficient
+    /// encodings and algebraic consistency. This does not recreate the seed.
+    ///
+    /// The checks follow FIPS 204 Algorithms 6, 22 and 25: the small secret
+    /// coefficients must be in range, t0 must equal the low part of A*s1+s2,
+    /// and tr must hash the corresponding encoded public key. Callers may
+    /// additionally perform a signing/verification pairwise consistency test.
+    ///
+    /// # Errors
+    /// Returns an error for malformed or inconsistent expanded key material.
+    pub fn from_expanded_checked(enc: &ExpandedSigningKeyBytes<P>) -> Result<Self, Error> {
+        let (_, _, _, s1_enc, s2_enc, _) = P::split_sk(enc);
+        // The legacy decoder asserts on out-of-range small coefficients.
+        // Validate the packed codes before calling it on untrusted bytes.
+        if !valid_small_secret_encoding(s1_enc, P::Eta::U32)
+            || !valid_small_secret_encoding(s2_enc, P::Eta::U32)
+        {
+            return Err(Error::new());
+        }
+        #[allow(deprecated)]
+        let key = Self::from_expanded(enc);
+        let As1_hat = &key.A_hat * &key.s1_hat;
+        let t = &As1_hat.ntt_inverse() + &key.s2;
+        let (t1, expected_t0) = t.power2round();
+        let public = VerifyingKey::<P>::encode_internal(&key.rho, &t1);
+        let expected_tr: B64 = H::default().absorb(&public).squeeze_new();
+        if !bool::from(key.t0.ct_eq(&expected_t0).and(key.tr.ct_eq(&expected_tr))) {
+            return Err(Error::new());
+        }
+        Ok(key)
+    }
+
     /// DEPRECATED: decode the key from an appropriately sized byte array.
     ///
     /// Note that this form is deprecated in practice; prefer to use [`ExpandedSigningKey::from_seed`].
@@ -512,6 +544,30 @@ impl<P: MlDsaParams> ExpandedSigningKey<P> {
             t0_enc,
         )
     }
+}
+
+// FIPS 204 BitUnPack codes for s1/s2 have width bitlen(2*eta), with
+// codes above 2*eta reserved. Read every code without invoking the legacy
+// decoder's assertions. eta is 2 or 4 for the standardized parameter sets.
+fn valid_small_secret_encoding(encoded: &[u8], eta: u32) -> bool {
+    let width = u32::BITS - (2 * eta).leading_zeros();
+    if width == 0 {
+        return false;
+    }
+    let mask = (1u32 << width) - 1;
+    let mut accumulator = 0u32;
+    let mut available = 0;
+    let mut valid = true;
+    for byte in encoded {
+        accumulator |= u32::from(*byte) << available;
+        available += 8;
+        while available >= width {
+            valid &= accumulator & mask <= 2 * eta;
+            accumulator >>= width;
+            available -= width;
+        }
+    }
+    valid
 }
 
 /// The `Signer` implementation for `ExpandedSigningKey` uses the optional deterministic variant of ML-DSA, and

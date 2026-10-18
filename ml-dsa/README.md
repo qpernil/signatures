@@ -55,3 +55,11 @@ dual licensed as above, without any additional terms or conditions.
 [RustCrypto]: https://github.com/RustCrypto
 [FIPS 204]: https://csrc.nist.gov/pubs/fips/204/final
 [CRYSTALS-Dilithium]: https://pq-crystals.org/dilithium/
+
+Expanded private imports can use `ExpandedSigningKey::from_expanded_checked`.
+It rejects reserved secret-coefficient encodings before decoding, recomputes
+`t0` from `A*s1+s2`, and checks `tr` against the derived public-key hash
+(FIPS 204 Algorithms 6, 22 and 25). This fallible API accepts valid seedless
+keys without invoking the legacy decoder on malformed input. Applications
+retain import policy and any operational sign/verify pairwise test. The
+seed representation remains preferred; a discarded seed cannot be recovered.
