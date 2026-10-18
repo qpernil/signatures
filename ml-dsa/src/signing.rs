@@ -483,15 +483,23 @@ impl<P: MlDsaParams> ExpandedSigningKey<P> {
         }
         #[allow(deprecated)]
         let key = Self::from_expanded(enc);
-        let As1_hat = &key.A_hat * &key.s1_hat;
-        let t = &As1_hat.ntt_inverse() + &key.s2;
+        key.validate_expanded_consistency()?;
+        Ok(key)
+    }
+
+    // Keep algebraic-validation temporaries out of the decoder's construction
+    // frame so unoptimized import also fits constrained caller stacks.
+    #[inline(never)]
+    fn validate_expanded_consistency(&self) -> Result<(), Error> {
+        let As1_hat = &self.A_hat * &self.s1_hat;
+        let t = &As1_hat.ntt_inverse() + &self.s2;
         let (t1, expected_t0) = t.power2round();
-        let public = VerifyingKey::<P>::encode_internal(&key.rho, &t1);
+        let public = VerifyingKey::<P>::encode_internal(&self.rho, &t1);
         let expected_tr: B64 = H::default().absorb(&public).squeeze_new();
-        if !bool::from(key.t0.ct_eq(&expected_t0).and(key.tr.ct_eq(&expected_tr))) {
+        if !bool::from(self.t0.ct_eq(&expected_t0).and(self.tr.ct_eq(&expected_tr))) {
             return Err(Error::new());
         }
-        Ok(key)
+        Ok(())
     }
 
     /// DEPRECATED: decode the key from an appropriately sized byte array.

@@ -5,7 +5,7 @@
 
 #![cfg(feature = "alloc")]
 
-use ml_dsa::{Keypair, MlDsa44, MlDsa65, MlDsa87, SigningKey, VerifyingKey};
+use ml_dsa::{ExpandedSigningKey, Keypair, MlDsa44, MlDsa65, MlDsa87, SigningKey, VerifyingKey};
 
 macro_rules! small_stack {
     ($name:ident, $params:ty) => {
@@ -15,6 +15,14 @@ macro_rules! small_stack {
                 .stack_size(512 * 1024)
                 .spawn(|| {
                     let key = SigningKey::<$params>::from_seed(&[7; 32].into());
+                    #[allow(deprecated)]
+                    let expanded = key.expanded_key().to_expanded();
+                    let imported = ExpandedSigningKey::<$params>::from_expanded_checked(&expanded)
+                        .expect("checked expanded import on a small stack");
+                    assert_eq!(
+                        imported.verifying_key().encode(),
+                        key.verifying_key().encode()
+                    );
                     let cloned = key.clone();
                     drop(key);
                     let public = cloned.verifying_key();
